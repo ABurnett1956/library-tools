@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<!--
+████████████████████████████████████████████████████████████████
+  SOUTHLAKE PUBLIC LIBRARY: PRINT & COPY PRICE CALCULATOR
+  Version 3, November 2026
+
+  WHAT THIS IS
+  A small stand-alone web page. It's hosted on GitHub Pages and
+  shown inside the CivicPlus Services page in a frame (iframe),
+  because CivicPlus removes JavaScript from its own pages.
+
+  HOW IT WORKS
+  Patrons type how many black-and-white copies and how many color
+  copies they need (either one can be 0). The calculator prices
+  each kind and adds them together.
+
+  TO CHANGE PRICES
+  Only edit the PRICE SETTINGS section in the <script> near the
+  bottom. Nothing else needs to change.
+████████████████████████████████████████████████████████████████
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Print and Copy Price Calculator | Southlake Public Library</title>
+  <style>
+    /* ---------- PAGE ---------- */
+    body {
+      margin: 0;
+      padding: 8px;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #222222;
+      line-height: 1.6;
+      background: #ffffff;
+    }
+
+    /* ---------- CALCULATOR BOX ---------- */
+    .calc {
+      max-width: 560px;
+      border: 1px solid #dfe5e0;
+      border-top: 4px solid #ac923c;   /* gold accent line */
+      border-radius: 10px;
+      padding: 24px 28px;
+    }
+    .calc h2 {
+      font-family: 'Raleway', Arial, sans-serif;
+      color: #183d20;
+      font-size: 1.35em;
+      margin: 0 0 20px 0;
+    }
+
+    /* ---------- NUMBER BOXES ---------- */
+    .number-row { margin: 0 0 20px 0; }
+    .number-row label {
+      display: block;
+      font-weight: bold;
+      color: #183d20;
+      margin: 0 0 6px 0;
+    }
+    .price-hint { display: block; font-size: 0.9em; color: #4a4a4a; margin: 4px 0 0 0; }
+    input[type="number"] {
+      font-size: 1.1em;
+      width: 120px;
+      padding: 8px 10px;
+      border: 2px solid #8a9a8d;
+      border-radius: 6px;
+    }
+    /* Clear focus outline for keyboard users (ADA) */
+    input:focus { outline: 3px solid #ac923c; outline-offset: 2px; }
+
+    /* ---------- RESULT ---------- */
+    .result {
+      background: #f4f6f4;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 8px 0 0 0;
+    }
+    .result .total {
+      display: block;
+      font-size: 2em;
+      font-weight: bold;
+      color: #183d20;
+      line-height: 1.2;
+    }
+    .result .line { display: block; margin: 4px 0 0 0; }
+
+    .note { font-size: 0.9em; color: #4a4a4a; margin: 16px 0 0 0; }
+  </style>
+</head>
+<body>
+
+  <div class="calc">
+    <h2>Estimate your printing cost</h2>
+
+    <!-- BOX 1: black-and-white copies -->
+    <div class="number-row">
+      <label for="bw">Black-and-white copies</label>
+      <input type="number" id="bw" min="0" max="9999" value="0" inputmode="numeric" aria-describedby="bw-hint">
+      <span class="price-hint" id="bw-hint">$1.00 for 1 to 6 copies, then $0.15 for each copy after that</span>
+    </div>
+
+    <!-- BOX 2: color copies -->
+    <div class="number-row">
+      <label for="color">Color copies</label>
+      <input type="number" id="color" min="0" max="9999" value="0" inputmode="numeric" aria-describedby="color-hint">
+      <span class="price-hint" id="color-hint">$1.00 for 1 to 2 copies, then $0.50 for each copy after that</span>
+    </div>
+
+    <!-- RESULT: aria-live makes screen readers announce the new total -->
+    <div class="result" aria-live="polite">
+      <span class="total" id="total">$0.00</span>
+      <span class="line" id="bw-line"></span>
+      <span class="line" id="color-line"></span>
+    </div>
+
+    <p class="note">This is an estimate. Staff will confirm your final price at the Library.</p>
+  </div>
+
+
+  <script>
+    /* ============================================================
+       PRICE SETTINGS: the only part you should need to edit
+       ============================================================
+       HOW PRICING WORKS
+       The $1.00 minimum covers the first few copies. Only the
+       copies AFTER that are charged the per-copy price.
+
+         minimum   = the $1.00 minimum charge
+         covers    = how many copies the minimum covers
+         perCopy   = price for each copy after that
+
+       Black and white: 1-6 copies = $1.00
+                        16 copies = $1.00 + (10 x $0.15) = $2.50
+       Color:           1-2 copies = $1.00
+                        10 copies = $1.00 + (8 x $0.50) = $5.00
+
+       If you change prices here, also update the two grey
+       price-hint lines in the HTML above.
+    */
+    var PRICES = {
+      bw:    { minimum: 1.00, covers: 6, perCopy: 0.15, name: "black-and-white" },
+      color: { minimum: 1.00, covers: 2, perCopy: 0.50, name: "color" }
+    };
+    /* ========================= END SETTINGS ========================= */
+
+
+    // Grab the parts of the page we need
+    var bwBox     = document.getElementById("bw");
+    var colorBox  = document.getElementById("color");
+    var totalText = document.getElementById("total");
+    var bwLine    = document.getElementById("bw-line");
+    var colorLine = document.getElementById("color-line");
+
+    // Turn whatever someone typed into a whole number, 0 or more
+    function cleanNumber(box) {
+      var n = parseInt(box.value, 10);
+      return (isNaN(n) || n < 0) ? 0 : n;
+    }
+
+    // Price for one kind of copy (black-and-white OR color)
+    function priceFor(count, p) {
+      if (count === 0) return 0;                              // none printed
+      if (count <= p.covers) return p.minimum;                // covered by the $1.00 minimum
+      return p.minimum + (count - p.covers) * p.perCopy;      // $1.00 + each extra copy
+    }
+
+    // Write one line of the breakdown, like "16 black-and-white copies: $2.50"
+    function describe(count, cost, p) {
+      if (count === 0) return "";
+      return count + " " + p.name + " cop" + (count === 1 ? "y" : "ies") + ": $" + cost.toFixed(2);
+    }
+
+    // Work out the total and show it
+    function update() {
+      var bwCount    = cleanNumber(bwBox);
+      var colorCount = cleanNumber(colorBox);
+      var bwCost     = priceFor(bwCount, PRICES.bw);
+      var colorCost  = priceFor(colorCount, PRICES.color);
+
+      totalText.textContent = "$" + (bwCost + colorCost).toFixed(2);
+      bwLine.textContent    = describe(bwCount, bwCost, PRICES.bw);
+      colorLine.textContent = describe(colorCount, colorCost, PRICES.color);
+    }
+
+    // Recalculate whenever someone types
+    bwBox.addEventListener("input", update);
+    colorBox.addEventListener("input", update);
+    update();
+  </script>
+
+</body>
+</html>
