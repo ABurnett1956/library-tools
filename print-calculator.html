@@ -2,7 +2,7 @@
 <!--
 ████████████████████████████████████████████████████████████████
   SOUTHLAKE PUBLIC LIBRARY: PRINT & COPY PRICE CALCULATOR
-  Version 3, November 2026
+  Version 4, November 2026
 
   WHAT THIS IS
   A small stand-alone web page. It's hosted on GitHub Pages and
@@ -11,8 +11,8 @@
 
   HOW IT WORKS
   Patrons type how many black-and-white copies and how many color
-  copies they need (either one can be 0). The calculator prices
-  each kind and adds them together.
+  copies they need (either one can be 0). Each copy is priced, the
+  two are added together, and the whole order has a $1.00 minimum.
 
   TO CHANGE PRICES
   Only edit the PRICE SETTINGS section in the <script> near the
@@ -97,14 +97,14 @@
     <div class="number-row">
       <label for="bw">Black-and-white copies</label>
       <input type="number" id="bw" min="0" max="9999" value="0" inputmode="numeric" aria-describedby="bw-hint">
-      <span class="price-hint" id="bw-hint">$1.00 for 1 to 6 copies, then $0.15 for each copy after that</span>
+      <span class="price-hint" id="bw-hint">$0.15 per copy</span>
     </div>
 
     <!-- BOX 2: color copies -->
     <div class="number-row">
       <label for="color">Color copies</label>
       <input type="number" id="color" min="0" max="9999" value="0" inputmode="numeric" aria-describedby="color-hint">
-      <span class="price-hint" id="color-hint">$1.00 for 1 to 2 copies, then $0.50 for each copy after that</span>
+      <span class="price-hint" id="color-hint">$0.50 per copy</span>
     </div>
 
     <!-- RESULT: aria-live makes screen readers announce the new total -->
@@ -112,9 +112,10 @@
       <span class="total" id="total">$0.00</span>
       <span class="line" id="bw-line"></span>
       <span class="line" id="color-line"></span>
+      <span class="line" id="min-line"></span>
     </div>
 
-    <p class="note">This is an estimate. Staff will confirm your final price at the Library.</p>
+    <p class="note">Every order has a $1.00 minimum. This is an estimate. Staff will confirm your final price at the Library.</p>
   </div>
 
 
@@ -123,25 +124,26 @@
        PRICE SETTINGS: the only part you should need to edit
        ============================================================
        HOW PRICING WORKS
-       The $1.00 minimum covers the first few copies. Only the
-       copies AFTER that are charged the per-copy price.
+       1. Every copy has its own price:
+            black and white = $0.15 per copy
+            color           = $0.50 per copy
+       2. Add black-and-white and color together.
+       3. If the order total is under $1.00, the patron pays $1.00
+          (the order minimum).
 
-         minimum   = the $1.00 minimum charge
-         covers    = how many copies the minimum covers
-         perCopy   = price for each copy after that
+       Examples:
+         2 B&W + 1 color = $0.30 + $0.50 = $0.80  -> pays $1.00
+         16 B&W          = 16 x $0.15     = $2.40
+         16 B&W + 3 color = $2.40 + $1.50 = $3.90
 
-       Black and white: 1-6 copies = $1.00
-                        16 copies = $1.00 + (10 x $0.15) = $2.50
-       Color:           1-2 copies = $1.00
-                        10 copies = $1.00 + (8 x $0.50) = $5.00
-
-       If you change prices here, also update the two grey
-       price-hint lines in the HTML above.
+       If you change prices here, also update the grey price-hint
+       lines in the HTML above.
     */
     var PRICES = {
-      bw:    { minimum: 1.00, covers: 6, perCopy: 0.15, name: "black-and-white" },
-      color: { minimum: 1.00, covers: 2, perCopy: 0.50, name: "color" }
+      bw:    { perCopy: 0.15, name: "black-and-white" },
+      color: { perCopy: 0.50, name: "color" }
     };
+    var ORDER_MINIMUM = 1.00;
     /* ========================= END SETTINGS ========================= */
 
 
@@ -151,6 +153,7 @@
     var totalText = document.getElementById("total");
     var bwLine    = document.getElementById("bw-line");
     var colorLine = document.getElementById("color-line");
+    var minLine   = document.getElementById("min-line");
 
     // Turn whatever someone typed into a whole number, 0 or more
     function cleanNumber(box) {
@@ -158,14 +161,7 @@
       return (isNaN(n) || n < 0) ? 0 : n;
     }
 
-    // Price for one kind of copy (black-and-white OR color)
-    function priceFor(count, p) {
-      if (count === 0) return 0;                              // none printed
-      if (count <= p.covers) return p.minimum;                // covered by the $1.00 minimum
-      return p.minimum + (count - p.covers) * p.perCopy;      // $1.00 + each extra copy
-    }
-
-    // Write one line of the breakdown, like "16 black-and-white copies: $2.50"
+    // Write one line of the breakdown, like "16 black-and-white copies: $2.40"
     function describe(count, cost, p) {
       if (count === 0) return "";
       return count + " " + p.name + " cop" + (count === 1 ? "y" : "ies") + ": $" + cost.toFixed(2);
@@ -175,10 +171,20 @@
     function update() {
       var bwCount    = cleanNumber(bwBox);
       var colorCount = cleanNumber(colorBox);
-      var bwCost     = priceFor(bwCount, PRICES.bw);
-      var colorCost  = priceFor(colorCount, PRICES.color);
+      var bwCost     = bwCount * PRICES.bw.perCopy;
+      var colorCost  = colorCount * PRICES.color.perCopy;
+      var subtotal   = Math.round((bwCost + colorCost) * 100) / 100;   // round to whole cents
+      var total      = subtotal;
 
-      totalText.textContent = "$" + (bwCost + colorCost).toFixed(2);
+      // Apply the $1.00 order minimum (only if they're printing something)
+      if (subtotal > 0 && subtotal < ORDER_MINIMUM) {
+        total = ORDER_MINIMUM;
+        minLine.textContent = "Copies add up to $" + subtotal.toFixed(2) + ", so the $" + ORDER_MINIMUM.toFixed(2) + " minimum applies.";
+      } else {
+        minLine.textContent = "";
+      }
+
+      totalText.textContent = "$" + total.toFixed(2);
       bwLine.textContent    = describe(bwCount, bwCost, PRICES.bw);
       colorLine.textContent = describe(colorCount, colorCost, PRICES.color);
     }
